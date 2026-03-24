@@ -6,10 +6,9 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 
-pub(super) fn timeout_signal(dur: Duration) -> Arc<AtomicBool> {
+pub(super) fn timeout_signal(dur: Duration, signal: Arc<AtomicBool>) -> Arc<AtomicBool> {
     // Theoretically we could include an async runtime to do this and use
     // fewer threads, but the stdlib implementation is only a few lines...
-    let signal = Arc::new(AtomicBool::new(false));
     let signal2 = signal.clone();
     spawn(move || {
         sleep(dur);

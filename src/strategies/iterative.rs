@@ -320,6 +320,10 @@ where
             stats: Stats::default(),
         }
     }
+    #[allow(unused)]
+    pub fn search_stop_flag(&self) -> Arc<AtomicBool> {
+        self.timeout.clone()
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn set_timeout(&mut self, timeout: Arc<AtomicBool>) {
@@ -341,7 +345,7 @@ where
         self.set_timeout(if duration == Duration::new(0, 0) {
             Arc::new(AtomicBool::new(false))
         } else {
-            timeout_signal(duration)
+            timeout_signal(duration, Arc::new(AtomicBool::new(false)))
         });
     }
 
@@ -367,8 +371,8 @@ where
         {
             // Default to a minimum of depth=1 after null moving.
             if depth > depth_reduction &&
-	    // If the position already seems pretty awesome.
-	      self.eval.evaluate(s) >= beta
+            // If the position already seems pretty awesome.
+            self.eval.evaluate(s) >= beta
             {
                 // If we just pass and let the opponent play this position (at reduced depth),
                 let mut nulled = AppliedMove::<E::G>::new(s, null_move);

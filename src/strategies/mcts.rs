@@ -285,6 +285,9 @@ impl<G: Game> MonteCarloTreeSearch<G> {
         }
     }
 
+    pub fn search_stop_flag(&self) -> Arc<AtomicBool> {
+        self.timeout.clone()
+    }
     /// Return the options used in this search.
     pub fn options(&self) -> &MCTSOptions {
         &self.options
@@ -399,7 +402,7 @@ where
         self.timeout = if self.max_time == Duration::default() {
             Arc::new(AtomicBool::new(false))
         } else {
-            timeout_signal(self.max_time)
+            timeout_signal(self.max_time, Arc::new(AtomicBool::new(false)))
         };
 
         thread::scope(|scope| {

@@ -389,6 +389,7 @@ pub struct ParallelSearch<E: Evaluator> {
     max_time: Duration,
 
     background_cancel: Arc<AtomicBool>,
+    stop_search: Arc<AtomicBool>,
     table: Arc<LockfreeTable<<E::G as Game>::M>>,
     prev_value: Evaluation,
     principal_variation: Vec<<E::G as Game>::M>,
@@ -409,6 +410,7 @@ impl<E: Evaluator> ParallelSearch<E> {
             max_depth: 99,
             max_time: Duration::from_secs(5),
             background_cancel: Arc::new(AtomicBool::new(false)),
+            stop_search: Arc::new(AtomicBool::new(false)),
             table,
             prev_value: 0,
             principal_variation: Vec::new(),
@@ -431,6 +433,11 @@ impl<E: Evaluator> ParallelSearch<E> {
     /// Return the parallel options used in this search.
     pub fn parallel_options(&self) -> &ParallelOptions {
         &self.par_opts
+    }
+
+    /// Get the flag used to end the best move search
+     pub fn stop_search_flag(&self) -> Arc<AtomicBool> {
+        self.stop_search.clone()
     }
 
     fn pretty_stats(
@@ -462,11 +469,13 @@ where
         }
         // Cancel any ongoing background processing.
         self.background_cancel.store(true, Ordering::Relaxed);
+        // Reset timeout flag
+        self.stop_search.store(false, Ordering::Relaxed);
         // Start timer if configured.
         let timeout = if self.max_time == Duration::new(0, 0) {
-            Arc::new(AtomicBool::new(false))
+            self.stop_search.clone()
         } else {
-            timeout_signal(self.max_time)
+            timeout_signal(self.max_time, self.stop_search.clone())
         };
 
         let (best_move, value) = {
