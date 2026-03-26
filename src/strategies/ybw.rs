@@ -7,6 +7,8 @@
 
 extern crate rayon;
 
+use crate::strategies::iterative::SearchStopSignal;
+
 use super::super::interface::*;
 use super::super::util::*;
 use super::common::*;
