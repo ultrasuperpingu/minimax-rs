@@ -29,6 +29,26 @@ pub enum Replacement {
     // TODO: Bucket(size)
 }
 
+/// A shared signal used to request the termination of an ongoing search.
+pub struct SearchStopSignal(
+    pub(super) Arc<AtomicBool>
+);
+impl SearchStopSignal {
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+    #[doc(hidden)]
+    pub fn from_atomic_bool(abool: Arc<AtomicBool>) -> Self {
+        Self(abool)
+    }
+    /// Requests the search to stop.
+    pub fn stop_search(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+
 struct TranspositionTable<M> {
     table: Vec<Entry<M>>,
     mask: usize,
@@ -320,9 +340,10 @@ where
             stats: Stats::default(),
         }
     }
-    #[allow(unused)]
-    pub fn search_stop_flag(&self) -> Arc<AtomicBool> {
-        self.timeout.clone()
+    /// Returns a handle to the signal used to stop the search.
+    /// This should be obtained before starting a search.
+    pub(super) fn next_search_stop_signal(&self) -> SearchStopSignal {
+        SearchStopSignal(self.timeout.clone())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -607,6 +628,11 @@ where
     /// Return the options used in this search.
     pub fn options(&self) -> &IterativeOptions {
         &self.opts
+    }
+    /// Returns a handle to the signal used to stop the search.
+    /// This should be obtained before starting a search.
+    pub fn next_search_stop_signal(&self) -> SearchStopSignal {
+        self.negamaxer.next_search_stop_signal()
     }
 
     #[doc(hidden)]
