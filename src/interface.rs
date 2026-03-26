@@ -79,11 +79,11 @@ impl Winner {
 /// This is meant to be defined on an empty newtype so that a game engine can
 /// be implemented in a separate crate without having to know about these
 /// `minimax` traits.
-pub trait Game: Sized {
+pub trait Game: Sized + std::fmt::Debug {
     /// The type of the game state.
     type S;
     /// The type of game moves.
-    type M: Copy;
+    type M: Copy + std::fmt::Debug;
 
     /// Generate moves at the given state.
     ///

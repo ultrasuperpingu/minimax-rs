@@ -75,6 +75,7 @@ impl Display for Board {
     }
 }
 
+#[derive(Debug)]
 pub struct Game;
 
 impl minimax::Game for Game {
@@ -167,7 +168,7 @@ impl minimax::Game for Game {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Place {
     i: u8,
 }

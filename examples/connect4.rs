@@ -89,6 +89,7 @@ impl Place {
     }
 }
 
+#[derive(Debug)]
 pub struct Game;
 
 impl minimax::Game for Game {

@@ -7,6 +7,7 @@
 
 extern crate rayon;
 
+
 use super::super::interface::*;
 use super::super::util::*;
 use super::common::*;
@@ -21,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Options to use for the parallel search engine.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ParallelOptions {
     pub num_threads: Option<usize>,
     serial_cutoff_depth: u8,
@@ -383,7 +384,7 @@ where
         best_move.map(|m| (m, best_value, depth))
     }
 }
-
+#[derive(Debug)]
 pub struct ParallelSearch<E: Evaluator> {
     max_depth: u8,
     max_time: Duration,
@@ -433,6 +434,14 @@ impl<E: Evaluator> ParallelSearch<E> {
     /// Return the parallel options used in this search.
     pub fn parallel_options(&self) -> &ParallelOptions {
         &self.par_opts
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_depth(&self) -> u8 {
+        self.max_depth
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_time(&self) -> &Duration {
+        &self.max_time
     }
 
     /// Get the flag used to end the best move search

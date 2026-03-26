@@ -1,7 +1,7 @@
 use super::common::{move_to_front, unclamp_value};
 use crate::interface::*;
 use std::cmp::{max, min};
-use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::Arc;
 
 // Common transposition table stuff.
@@ -16,7 +16,7 @@ pub(super) enum EntryFlag {
 #[derive(Copy, Clone)]
 #[repr(align(16))]
 pub(super) struct Entry<M> {
-    pub(super) high_hash: u32,
+    pub(super) hash: u64,
     pub(super) value: Evaluation,
     pub(super) depth: u8,
     pub(super) flag: EntryFlag,
@@ -28,10 +28,6 @@ pub(super) struct Entry<M> {
 fn test_entry_size() {
     assert!(std::mem::size_of::<Entry<[u16; 2]>>() <= 16);
     assert!(std::mem::size_of::<ConcurrentEntry<[u8; 6]>>() <= 16);
-}
-
-pub(super) fn high_bits(hash: u64) -> u32 {
-    (hash >> 32) as u32
 }
 
 impl<M> Entry<M> {
@@ -191,7 +187,7 @@ impl<M> RacyTable<M> {
         let mut table = Vec::with_capacity(size);
         for _ in 0..size {
             table.push(Entry::<M> {
-                high_hash: 0,
+                hash: 0,
                 value: 0,
                 depth: 0,
                 flag: EntryFlag::Exact,
@@ -201,13 +197,14 @@ impl<M> RacyTable<M> {
         }
         Self { table, mask, generation: AtomicU8::new(0) }
     }
+
 }
 
 impl<M: Copy> Table<M> for RacyTable<M> {
     fn lookup(&self, hash: u64) -> Option<Entry<M>> {
         let index = (hash as usize) & self.mask;
         let entry = self.table[index];
-        if high_bits(hash) == entry.high_hash {
+        if hash == entry.hash {
             return Some(entry);
         }
         None
@@ -231,7 +228,7 @@ impl<M: Copy> ConcurrentTable<M> for RacyTable<M> {
             #[allow(mutable_transmutes)]
             let ptr = unsafe { std::mem::transmute::<&Entry<M>, &mut Entry<M>>(entry) };
             *ptr = Entry {
-                high_hash: high_bits(hash),
+                hash,
                 value,
                 depth,
                 flag,
@@ -247,15 +244,16 @@ impl<M: Copy> ConcurrentTable<M> for RacyTable<M> {
 }
 
 #[repr(align(16))]
+#[derive(Debug)]
 struct ConcurrentEntry<M> {
-    high_hash: AtomicU32,
+    hash: AtomicU64,
     value: Evaluation,
     depth: u8,
     flag: EntryFlag,
     generation: u8,
     best_move: Option<M>,
 }
-
+#[derive(Debug)]
 pub(super) struct LockfreeTable<M> {
     table: Vec<ConcurrentEntry<M>>,
     mask: usize,
@@ -269,12 +267,12 @@ impl<M: Copy> Table<M> for LockfreeTable<M> {
     fn lookup(&self, hash: u64) -> Option<Entry<M>> {
         let index = (hash as usize) & self.mask;
         let entry = &self.table[index];
-        let table_hash = entry.high_hash.load(Ordering::Acquire);
-        if high_bits(hash) | 1 == table_hash | 1 {
+        let table_hash = entry.hash.load(Ordering::Acquire);
+        if hash | 1 == table_hash | 1 {
             // Copy contents
             let ret = Some(Entry {
                 // No one reads the hash.
-                high_hash: 0,
+                hash: 0,
                 value: entry.value,
                 depth: entry.depth,
                 flag: entry.flag,
@@ -282,7 +280,7 @@ impl<M: Copy> Table<M> for LockfreeTable<M> {
                 best_move: entry.best_move,
             });
             // Verify the hash hasn't changed during the copy.
-            if table_hash == entry.high_hash.load(Ordering::SeqCst) {
+            if table_hash == entry.hash.load(Ordering::SeqCst) {
                 return ret;
             }
         }
@@ -299,7 +297,7 @@ impl<M: Copy> Table<M> for LockfreeTable<M> {
 
 #[allow(dead_code)]
 impl<M> LockfreeTable<M> {
-    const WRITING_SENTINEL: u32 = 0xffff_ffff;
+    const WRITING_SENTINEL: u64 = 0xffff_ffff_ffff_ffff;
 
     pub(super) fn new(table_byte_size: usize) -> Self {
         let size =
@@ -308,7 +306,7 @@ impl<M> LockfreeTable<M> {
         let mut table = Vec::with_capacity(size);
         for _ in 0..size {
             table.push(ConcurrentEntry::<M> {
-                high_hash: AtomicU32::new(0x5555_5555),
+                hash: AtomicU64::new(0x5555_5555_5555_5555),
                 value: 0,
                 depth: 0,
                 flag: EntryFlag::Exact,
@@ -318,6 +316,7 @@ impl<M> LockfreeTable<M> {
         }
         Self { table, mask, generation: AtomicU8::new(0) }
     }
+
 }
 
 impl<M: Copy> ConcurrentTable<M> for LockfreeTable<M> {
@@ -330,14 +329,14 @@ impl<M: Copy> ConcurrentTable<M> for LockfreeTable<M> {
         // TODO: some not-totally racy reads of generation and depth
         if entry.generation != table_gen || entry.depth <= depth {
             // Set hash to sentinel value during write.
-            let x = entry.high_hash.load(Ordering::Acquire);
+            let x = entry.hash.load(Ordering::Acquire);
             if x == Self::WRITING_SENTINEL {
                 // Someone's already writing, just forget it.
                 return;
             }
             // Try to set to sentinel value:
             if entry
-                .high_hash
+                .hash
                 .compare_exchange_weak(
                     x,
                     Self::WRITING_SENTINEL,
@@ -362,14 +361,14 @@ impl<M: Copy> ConcurrentTable<M> for LockfreeTable<M> {
             entry.best_move = Some(best_move);
 
             // Set hash to correct value to indicate done.
-            let new_hash = if high_bits(hash) | 1 == x | 1 {
+            let new_hash = if hash | 1 == x | 1 {
                 // If we're overwriting the same hash, flip the lowest bit to
                 // catch any readers reading across this change.
                 x ^ 1
             } else {
-                high_bits(hash)
+                hash
             };
-            entry.high_hash.store(new_hash, Ordering::Release);
+            entry.hash.store(new_hash, Ordering::Release);
         }
     }
 

@@ -45,7 +45,7 @@ impl<M: Copy> TranspositionTable<M> {
         let mut table = Vec::with_capacity(size);
         for _ in 0..size {
             table.push(Entry::<M> {
-                high_hash: 0,
+                hash: 0,
                 value: 0,
                 depth: 0,
                 flag: EntryFlag::Exact,
@@ -61,11 +61,11 @@ impl<M: Copy> Table<M> for TranspositionTable<M> {
     fn lookup(&self, hash: u64) -> Option<Entry<M>> {
         let index = (hash as usize) & self.mask;
         let entry = &self.table[index];
-        if high_bits(hash) == entry.high_hash {
+        if hash == entry.hash {
             Some(*entry)
         } else if self.strategy == Replacement::TwoTier {
             let entry = &self.table[index + 1];
-            if high_bits(hash) == entry.high_hash { Some(*entry) } else { None }
+            if hash == entry.hash { Some(*entry) } else { None }
         } else {
             None
         }
@@ -96,7 +96,7 @@ impl<M: Copy> Table<M> for TranspositionTable<M> {
         };
         if let Some(index) = dest {
             self.table[index] = Entry {
-                high_hash: high_bits(hash),
+                hash,
                 value,
                 depth,
                 flag,
@@ -112,7 +112,7 @@ impl<M: Copy> Table<M> for TranspositionTable<M> {
 }
 
 /// Options to use for the iterative search engines.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct IterativeOptions {
     pub table_byte_size: usize,
     pub(super) strategy: Replacement,
@@ -146,6 +146,42 @@ impl IterativeOptions {
             countermove_history_table: false,
             verbose: false,
         }
+    }
+    pub fn get_strategy(&self) -> Replacement {
+        self.strategy
+    }
+    pub fn get_null_window_search(&self) -> bool {
+        self.null_window_search
+    }
+    pub fn get_null_move_depth(&self) -> Option<u8> {
+        self.null_move_depth
+    }
+    pub fn get_singular_extension(&self) -> bool {
+        self.singular_extension
+    }
+    pub fn get_aspiration_window(&self) -> Option<Evaluation> {
+        self.aspiration_window
+    }
+    pub fn get_mtdf(&self) -> bool {
+        self.mtdf
+    }
+    pub fn get_step_increment(&self) -> Option<u8> {
+        self.null_move_depth
+    }
+    pub fn get_max_quiescence_depth(&self) -> u8 {
+        self.max_quiescence_depth
+    }
+    pub fn get_min_reorder_moves_depth(&self) -> u8 {
+        self.min_reorder_moves_depth
+    }
+    pub fn get_countermove_table(&self) -> bool {
+        self.countermove_table
+    }
+    pub fn get_countermove_history_table(&self) -> bool {
+        self.countermove_history_table
+    }
+    pub fn get_verbose(&self) -> bool {
+        self.verbose
     }
 }
 

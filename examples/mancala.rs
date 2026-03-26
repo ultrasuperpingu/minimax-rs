@@ -3,7 +3,7 @@ extern crate minimax;
 use crate::minimax::{Game, Strategy};
 use std::fmt;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct Board {
     // First index by player.
     // Next index by pit, counting down from 6 to 1 for the pits in play.
@@ -25,6 +25,7 @@ impl Default for Board {
 // 0 means pass (because of being skipped).
 type Move = u8;
 
+#[derive(Debug)]
 struct Mancala;
 
 impl minimax::Game for Mancala {
