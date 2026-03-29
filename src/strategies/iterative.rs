@@ -14,102 +14,33 @@ use super::table::*;
 use instant::Instant;
 use rand::prelude::SliceRandom;
 use std::cmp::max;
-#[cfg(not(target_arch = "wasm32"))]
+//#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
+//#[cfg(not(target_arch = "wasm32"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-/// Strategies for when to overwrite entries in the transition table.
-pub enum Replacement {
-    Always,
-    DepthPreferred,
-    TwoTier,
-    // TODO: Bucket(size)
-}
-
-struct TranspositionTable<M> {
-    table: Vec<Entry<M>>,
-    mask: usize,
-    // Incremented for each iterative deepening run.
-    // Values from old generations are always overwritten.
-    generation: u8,
-    strategy: Replacement,
-}
-
-impl<M: Copy> TranspositionTable<M> {
-    fn new(table_byte_size: usize, strategy: Replacement) -> Self {
-        let size = (table_byte_size / std::mem::size_of::<Entry<M>>()).next_power_of_two();
-        let mask = if strategy == Replacement::TwoTier { (size - 1) & !1 } else { size - 1 };
-        let mut table = Vec::with_capacity(size);
-        for _ in 0..size {
-            table.push(Entry::<M> {
-                hash: 0,
-                value: 0,
-                depth: 0,
-                flag: EntryFlag::Exact,
-                generation: 0,
-                best_move: None,
-            });
-        }
-        Self { table, mask, generation: 0, strategy }
+/// A shared signal used to request the termination of an ongoing search.
+//#[cfg(not(target_arch = "wasm32"))]
+pub struct SearchStopSignal(
+    pub(super) Arc<AtomicBool>
+);
+//#[cfg(not(target_arch = "wasm32"))]
+impl SearchStopSignal {
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+    #[doc(hidden)]
+    pub fn from_atomic_bool(abool: Arc<AtomicBool>) -> Self {
+        Self(abool)
+    }
+    /// Requests the search to stop.
+    pub fn stop_search(&self) {
+        self.0.store(true, Ordering::Relaxed);
     }
 }
 
-impl<M: Copy> Table<M> for TranspositionTable<M> {
-    fn lookup(&self, hash: u64) -> Option<Entry<M>> {
-        let index = (hash as usize) & self.mask;
-        let entry = &self.table[index];
-        if hash == entry.hash {
-            Some(*entry)
-        } else if self.strategy == Replacement::TwoTier {
-            let entry = &self.table[index + 1];
-            if hash == entry.hash { Some(*entry) } else { None }
-        } else {
-            None
-        }
-    }
-
-    fn store(&mut self, hash: u64, value: Evaluation, depth: u8, flag: EntryFlag, best_move: M) {
-        let dest = match self.strategy {
-            Replacement::Always => Some((hash as usize) & self.mask),
-            Replacement::DepthPreferred => {
-                let index = (hash as usize) & self.mask;
-                let entry = &self.table[index];
-                if entry.generation != self.generation || entry.depth <= depth {
-                    Some(index)
-                } else {
-                    None
-                }
-            }
-            Replacement::TwoTier => {
-                // index points to the first of a pair of entries, the depth-preferred entry and the always-replace entry.
-                let index = (hash as usize) & self.mask;
-                let entry = &self.table[index];
-                if entry.generation != self.generation || entry.depth <= depth {
-                    Some(index)
-                } else {
-                    Some(index + 1)
-                }
-            }
-        };
-        if let Some(index) = dest {
-            self.table[index] = Entry {
-                hash,
-                value,
-                depth,
-                flag,
-                generation: self.generation,
-                best_move: Some(best_move),
-            }
-        }
-    }
-
-    fn advance_generation(&mut self) {
-        self.generation = self.generation.wrapping_add(1);
-    }
-}
 
 /// Options to use for the iterative search engines.
 #[derive(Clone, Copy, Debug)]
@@ -321,7 +252,7 @@ impl Stats {
 }
 
 pub(super) struct Negamaxer<E: Evaluator, T> {
-    #[cfg(not(target_arch = "wasm32"))]
+    //#[cfg(not(target_arch = "wasm32"))]
     timeout: Arc<AtomicBool>,
     #[cfg(target_arch = "wasm32")]
     deadline: Instant,
@@ -342,7 +273,7 @@ where
 {
     pub(super) fn new(table: T, eval: E, opts: IterativeOptions) -> Self {
         Self {
-            #[cfg(not(target_arch = "wasm32"))]
+            //#[cfg(not(target_arch = "wasm32"))]
             timeout: Arc::new(AtomicBool::new(false)),
             #[cfg(target_arch = "wasm32")]
             deadline: Instant::now(),
@@ -356,12 +287,14 @@ where
             stats: Stats::default(),
         }
     }
-    #[allow(unused)]
-    pub fn search_stop_flag(&self) -> Arc<AtomicBool> {
-        self.timeout.clone()
+    /// Returns a handle to the signal used to stop the search.
+    /// This should be obtained before starting a search.
+    //#[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn next_search_stop_signal(&self) -> SearchStopSignal {
+        SearchStopSignal(self.timeout.clone())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    //#[cfg(not(target_arch = "wasm32"))]
     pub(super) fn set_timeout(&mut self, timeout: Arc<AtomicBool>) {
         self.timeout = timeout;
     }
@@ -643,6 +576,21 @@ where
     /// Return the options used in this search.
     pub fn options(&self) -> &IterativeOptions {
         &self.opts
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_depth(&self) -> u8 {
+        self.max_depth
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_time(&self) -> &Duration {
+        &self.max_time
+    }
+    
+    /// Returns a handle to the signal used to stop the search.
+    /// This should be obtained before starting a search.
+    //#[cfg(not(target_arch = "wasm32"))]
+    pub fn next_search_stop_signal(&self) -> SearchStopSignal {
+        self.negamaxer.next_search_stop_signal()
     }
 
     #[doc(hidden)]

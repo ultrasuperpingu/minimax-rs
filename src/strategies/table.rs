@@ -4,10 +4,20 @@ use std::cmp::{max, min};
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::Arc;
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+/// Strategies for when to overwrite entries in the transition table.
+pub enum Replacement {
+    Always,
+    DepthPreferred,
+    TwoTier,
+    // TODO: Bucket(size)
+}
+
+
 // Common transposition table stuff.
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(super) enum EntryFlag {
+pub enum EntryFlag {
     Exact,
     Upperbound,
     Lowerbound,
@@ -15,13 +25,13 @@ pub(super) enum EntryFlag {
 
 #[derive(Copy, Clone)]
 #[repr(align(16))]
-pub(super) struct Entry<M> {
-    pub(super) hash: u64,
-    pub(super) value: Evaluation,
-    pub(super) depth: u8,
-    pub(super) flag: EntryFlag,
-    pub(super) generation: u8,
-    pub(super) best_move: Option<M>,
+pub struct Entry<M> {
+    pub hash: u64,
+    pub value: Evaluation,
+    pub depth: u8,
+    pub flag: EntryFlag,
+    pub generation: u8,
+    pub best_move: Option<M>,
 }
 
 #[test]
@@ -31,7 +41,7 @@ fn test_entry_size() {
 }
 
 impl<M> Entry<M> {
-    pub(super) fn value_string(&self) -> String {
+    pub fn value_string(&self) -> String {
         match unclamp_value(self.value) {
             WORST_EVAL => "-∞".to_owned(),
             BEST_EVAL => "∞".to_owned(),
@@ -39,7 +49,7 @@ impl<M> Entry<M> {
         }
     }
 
-    pub(super) fn bounds(&self) -> String {
+    pub fn bounds(&self) -> String {
         match self.flag {
             EntryFlag::Exact => "=",
             EntryFlag::Upperbound => "≤",
@@ -52,7 +62,7 @@ impl<M> Entry<M> {
 
 // A trait for a transposition table. The methods are mutual exclusion, but
 // the idea is that an implementation can wrap a shared concurrent table.
-pub(super) trait Table<M: Copy> {
+pub trait Table<M: Copy> {
     fn lookup(&self, hash: u64) -> Option<Entry<M>>;
     fn store(&mut self, hash: u64, value: Evaluation, depth: u8, flag: EntryFlag, best_move: M);
     fn advance_generation(&mut self);
@@ -135,7 +145,7 @@ pub(super) trait Table<M: Copy> {
     }
 }
 
-pub(super) trait ConcurrentTable<M> {
+pub trait ConcurrentTable<M> {
     fn concurrent_store(
         &self, hash: u64, value: Evaluation, depth: u8, flag: EntryFlag, best_move: M,
     );
@@ -169,9 +179,91 @@ impl<M: Copy, T: Table<M> + ConcurrentTable<M>> Table<M> for Arc<T> {
     }
 }
 
+pub struct TranspositionTable<M> {
+    table: Vec<Entry<M>>,
+    mask: usize,
+    // Incremented for each iterative deepening run.
+    // Values from old generations are always overwritten.
+    generation: u8,
+    strategy: Replacement,
+}
+
+impl<M: Copy> TranspositionTable<M> {
+    pub fn new(table_byte_size: usize, strategy: Replacement) -> Self {
+        let size = (table_byte_size / std::mem::size_of::<Entry<M>>()).next_power_of_two();
+        let mask = if strategy == Replacement::TwoTier { (size - 1) & !1 } else { size - 1 };
+        let mut table = Vec::with_capacity(size);
+        for _ in 0..size {
+            table.push(Entry::<M> {
+                hash: 0,
+                value: 0,
+                depth: 0,
+                flag: EntryFlag::Exact,
+                generation: 0,
+                best_move: None,
+            });
+        }
+        Self { table, mask, generation: 0, strategy }
+    }
+}
+
+impl<M: Copy> Table<M> for TranspositionTable<M> {
+    fn lookup(&self, hash: u64) -> Option<Entry<M>> {
+        let index = (hash as usize) & self.mask;
+        let entry = &self.table[index];
+        if hash == entry.hash {
+            Some(*entry)
+        } else if self.strategy == Replacement::TwoTier {
+            let entry = &self.table[index + 1];
+            if hash == entry.hash { Some(*entry) } else { None }
+        } else {
+            None
+        }
+    }
+
+    fn store(&mut self, hash: u64, value: Evaluation, depth: u8, flag: EntryFlag, best_move: M) {
+        let dest = match self.strategy {
+            Replacement::Always => Some((hash as usize) & self.mask),
+            Replacement::DepthPreferred => {
+                let index = (hash as usize) & self.mask;
+                let entry = &self.table[index];
+                if entry.generation != self.generation || entry.depth <= depth {
+                    Some(index)
+                } else {
+                    None
+                }
+            }
+            Replacement::TwoTier => {
+                // index points to the first of a pair of entries, the depth-preferred entry and the always-replace entry.
+                let index = (hash as usize) & self.mask;
+                let entry = &self.table[index];
+                if entry.generation != self.generation || entry.depth <= depth {
+                    Some(index)
+                } else {
+                    Some(index + 1)
+                }
+            }
+        };
+        if let Some(index) = dest {
+            self.table[index] = Entry {
+                hash,
+                value,
+                depth,
+                flag,
+                generation: self.generation,
+                best_move: Some(best_move),
+            }
+        }
+    }
+
+    fn advance_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+}
+
 // A concurrent table that doesn't bother to use atomic operations to access its entries.
 // It's crazily unsafe, but somehow StockFish gets away with this?
-pub(super) struct RacyTable<M> {
+pub struct RacyTable<M> {
     table: Vec<Entry<M>>,
     mask: usize,
     // Incremented for each iterative deepening run.
@@ -181,7 +273,7 @@ pub(super) struct RacyTable<M> {
 
 #[allow(dead_code)]
 impl<M> RacyTable<M> {
-    pub(super) fn new(table_byte_size: usize) -> Self {
+    pub fn new(table_byte_size: usize) -> Self {
         let size = (table_byte_size / std::mem::size_of::<Entry<M>>()).next_power_of_two();
         let mask = size - 1;
         let mut table = Vec::with_capacity(size);
@@ -245,7 +337,7 @@ impl<M: Copy> ConcurrentTable<M> for RacyTable<M> {
 
 #[repr(align(16))]
 #[derive(Debug)]
-struct ConcurrentEntry<M> {
+pub struct ConcurrentEntry<M> {
     hash: AtomicU64,
     value: Evaluation,
     depth: u8,
@@ -254,7 +346,7 @@ struct ConcurrentEntry<M> {
     best_move: Option<M>,
 }
 #[derive(Debug)]
-pub(super) struct LockfreeTable<M> {
+pub struct LockfreeTable<M> {
     table: Vec<ConcurrentEntry<M>>,
     mask: usize,
     generation: AtomicU8,
@@ -378,7 +470,7 @@ impl<M: Copy> ConcurrentTable<M> for LockfreeTable<M> {
 }
 
 // A single-threaded utility to find moves that have done well in other branches.
-pub(super) struct CounterMoves<G: Game> {
+pub struct CounterMoves<G: Game> {
     countermove_enabled: bool,
     history_enabled: bool,
     // For a given move index, which followup most recently led to a beta cutoff?
@@ -391,7 +483,7 @@ impl<G: Game> CounterMoves<G>
 where
     G::M: Eq + Copy,
 {
-    pub(super) fn new(countermove_enabled: bool, history_enabled: bool) -> Self {
+    pub fn new(countermove_enabled: bool, history_enabled: bool) -> Self {
         Self {
             countermove_enabled,
             history_enabled,
@@ -400,7 +492,7 @@ where
         }
     }
 
-    pub(super) fn reorder(&self, prev: Option<G::M>, moves: &mut [G::M]) {
+    pub fn reorder(&self, prev: Option<G::M>, moves: &mut [G::M]) {
         if !self.history_table.is_empty() {
             // Stable sort to preserve previous orderings.
             moves.sort_by_key(|&m| !self.history_table[G::table_index(m) as usize]);
@@ -412,7 +504,7 @@ where
         }
     }
 
-    pub(super) fn update(&mut self, prev: Option<G::M>, m: G::M) {
+    pub fn update(&mut self, prev: Option<G::M>, m: G::M) {
         if let Some(prev) = prev {
             if let Some(entry) = self.countermove_table.get_mut(G::table_index(prev) as usize) {
                 *entry = m;
@@ -423,7 +515,7 @@ where
         }
     }
 
-    pub(super) fn advance_generation(&mut self, null_move: Option<G::M>) {
+    pub fn advance_generation(&mut self, null_move: Option<G::M>) {
         // Lazily allocate tables
         if self.countermove_enabled && self.countermove_table.is_empty() {
             if let Some(m) = null_move {

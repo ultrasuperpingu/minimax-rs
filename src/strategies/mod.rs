@@ -11,4 +11,4 @@ pub mod ybw;
 mod common;
 #[cfg(not(target_arch = "wasm32"))]
 mod sync_util;
-mod table;
+pub mod table;

@@ -7,6 +7,7 @@
 
 extern crate rayon;
 
+use crate::strategies::iterative::SearchStopSignal;
 
 use super::super::interface::*;
 use super::super::util::*;
@@ -116,8 +117,8 @@ where
         {
             // Default to a minimum of depth=1 after null moving.
             if depth > depth_reduction &&
-	    // If the position already seems pretty awesome.
-	      self.eval.evaluate(s) >= beta
+            // If the position already seems pretty awesome.
+            self.eval.evaluate(s) >= beta
             {
                 // If we just pass and let the opponent play this position (at reduced depth),
                 let mut nulled = AppliedMove::<E::G>::new(s, null_move);
@@ -401,7 +402,6 @@ pub struct ParallelSearch<E: Evaluator> {
     opts: IterativeOptions,
     par_opts: ParallelOptions,
 }
-
 impl<E: Evaluator> ParallelSearch<E> {
     pub fn new(eval: E, opts: IterativeOptions, par_opts: ParallelOptions) -> ParallelSearch<E> {
         let table = Arc::new(LockfreeTable::new(opts.table_byte_size));
@@ -443,10 +443,11 @@ impl<E: Evaluator> ParallelSearch<E> {
     pub fn get_max_time(&self) -> &Duration {
         &self.max_time
     }
-
-    /// Get the flag used to end the best move search
-     pub fn stop_search_flag(&self) -> Arc<AtomicBool> {
-        self.stop_search.clone()
+    
+    /// Returns a handle to the signal used to stop the search.
+    /// This should be obtained before starting a search.
+    pub fn next_search_stop_signal(&self) -> SearchStopSignal {
+        SearchStopSignal(self.stop_search.clone())
     }
 
     fn pretty_stats(
