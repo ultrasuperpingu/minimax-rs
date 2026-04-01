@@ -46,7 +46,9 @@ pub trait Evaluator {
     // TODO reorder moves by assigning value to each state and combining with countermoves table etc.
 }
 /// Allows the evaluator to be aware of the current player, useful for turn-based games.
-pub trait TurnBasedGameEvaluator : Evaluator {
+pub trait TurnBasedGameEvaluator : Evaluator
+where Self::G: TurnBasedGame
+{
     /// Set the current player for evaluation purposes.
     fn set_player_on_trait(&mut self, p: i8);
 }
