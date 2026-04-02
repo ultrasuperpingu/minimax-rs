@@ -399,10 +399,11 @@ where
             let rollouts_per_thread = self.max_rollouts / num_threads;
             (rollouts_per_thread, self.max_rollouts - rollouts_per_thread * num_threads)
         };
-        self.timeout = if self.max_time == Duration::default() {
-            Arc::new(AtomicBool::new(false))
+        let _cancel_timeout_on_drop = if self.max_time == Duration::default() {
+            self.timeout.store(false, Relaxed);
+            None
         } else {
-            timeout_signal(self.max_time, Arc::new(AtomicBool::new(false)))
+            Some(timeout_signal(self.max_time, &self.timeout))
         };
 
         thread::scope(|scope| {

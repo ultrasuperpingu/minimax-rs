@@ -8,7 +8,7 @@ extern crate minimax;
 use std::default::Default;
 use std::fmt::{Display, Formatter, Result};
 
-use minimax::{TurnBasedGame, TurnBasedGameEvaluator};
+use minimax::{IterativeOptions, TurnBasedGame, TurnBasedGameEvaluator};
 use rand::{Rng, rng};
 
 const RACE_LENGTH: u8 = 48;
@@ -70,7 +70,12 @@ impl Display for Board {
         Ok(())
     }
 }
-
+pub(crate) const fn splitmix64(mut x: u64) -> u64 {
+	x = x.wrapping_add(0x9E3779B97F4A7C15);
+	x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+	x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
+	x ^ (x >> 31)
+}
 #[derive(Debug)]
 pub struct Game;
 
@@ -189,6 +194,16 @@ impl minimax::Game for Game {
         }
         Some(b)
     }
+    fn notation(_state: &Self::S, _move: Self::M) -> Option<String> {
+        Some(format!("{:?}", _move))
+    }
+    fn zobrist_hash(_state: &Self::S) -> u64 {
+        let hash = (_state.p1 as u64)
+            | ((_state.p2 as u64) << 8)
+            | ((_state.to_move as u64) << 17)
+            | ((_state.current_dice_choice.is_some() as u64) << 18);
+        splitmix64(hash)
+    }
 }
 fn prob_2d(n: u8, sum: u8) -> f32 {
     if sum < 2 || sum > 2 * n {
@@ -239,15 +254,15 @@ impl Default for DiceRaceEvaluator {
     }
 }
 impl TurnBasedGameEvaluator for DiceRaceEvaluator {
-		fn set_player_on_trait(&mut self, p: i8) {
-			self.0 = p != 1;
-		}
-	}
+    fn set_player_on_trait(&mut self, p: i8) {
+        self.0 = p != 1;
+    }
+}
 impl minimax::Evaluator for DiceRaceEvaluator {
     type G = Game;
     fn evaluate(&self, b: &Board) -> minimax::Evaluation {
-        let remaining1=RACE_LENGTH - b.p1;
-        let remaining2=RACE_LENGTH - b.p2;
+        let remaining1 = RACE_LENGTH - b.p1;
+        let remaining2 = RACE_LENGTH - b.p2;
         //println!("{remaining1} {remaining2}");
         let mut score_p1 = if remaining1 <= 5 {
             // =25% chance to win
@@ -299,9 +314,11 @@ impl minimax::Evaluator for DiceRaceEvaluator {
 }
 fn main() {
     use minimax::strategies::expectiminimax::ExpectiMinimax;
+    use minimax::strategies::expecti_iterative::ExpectiIterativeSearch;
     use minimax::{Game, Strategy};
     let mut minimax = ExpectiMinimax::new(DiceRaceEvaluator::default(), 8);
-    let mut minimax2 = ExpectiMinimax::new(DiceRaceEvaluator::default(), 8);
+    let mut minimax2 = ExpectiIterativeSearch::new(DiceRaceEvaluator::default(), IterativeOptions::new().with_null_window_search(true));
+    minimax2.set_max_depth(8);
     let mut b = Board::default();
     while self::Game::get_winner(&b).is_none() {
         println!("{}", b);

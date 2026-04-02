@@ -64,6 +64,7 @@ pub(super) fn move_to_front<M: Eq>(m: M, moves: &mut [M]) {
 }
 
 // This exists to be wrapped in a mutex, because it didn't work when I tried a tuple.
+#[derive(Debug)]
 pub(super) struct ValueMove<M> {
     pub(super) value: Evaluation,
     pub(super) m: M,

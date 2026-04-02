@@ -485,7 +485,8 @@ where
         let timeout = if self.max_time == Duration::new(0, 0) {
             self.stop_search.clone()
         } else {
-            timeout_signal(self.max_time, self.stop_search.clone())
+            timeout_signal(self.max_time, &self.stop_search);
+            self.stop_search.clone()
         };
 
         let (best_move, value) = {

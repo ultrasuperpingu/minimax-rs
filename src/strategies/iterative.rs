@@ -295,12 +295,12 @@ where
     }
 
     //#[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn set_timeout(&mut self, timeout: Arc<AtomicBool>) {
-        self.timeout = timeout;
-    }
+    //pub(super) fn set_timeout(&mut self, timeout: Arc<AtomicBool>) {
+    //    self.timeout = timeout;
+    //}
 
     #[cfg(target_arch = "wasm32")]
-    fn reset_timeout(&mut self, duration: Duration) {
+    fn reset_timeout(&mut self, duration: Duration) -> Option<Arc<()>> {
         self.timeout_counter = if duration == Duration::new(0, 0) {
             // Too high counter that never hits the maximum.
             1000
@@ -308,14 +308,16 @@ where
             0
         };
         self.deadline = Instant::now() + duration;
+        None
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fn reset_timeout(&mut self, duration: Duration) {
-        self.set_timeout(if duration == Duration::new(0, 0) {
-            Arc::new(AtomicBool::new(false))
+    fn reset_timeout(&mut self, duration: Duration) -> Option<Arc<()>> {
+        if duration == Duration::new(0, 0) {
+            self.timeout.store(false, Ordering::Relaxed);
+            None
         } else {
-            timeout_signal(duration, Arc::new(AtomicBool::new(false)))
-        });
+            Some(timeout_signal(duration, &self.timeout))
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -636,7 +638,7 @@ where
         self.actual_depth = 0;
         let start_time = Instant::now();
         // Start timer if configured.
-        self.negamaxer.reset_timeout(self.max_time);
+        let _cancel_timeout_on_drop = self.negamaxer.reset_timeout(self.max_time);
 
         let root_hash = E::G::zobrist_hash(s);
         let mut s_clone = s.clone();
