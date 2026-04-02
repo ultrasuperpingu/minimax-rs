@@ -36,14 +36,6 @@ pub struct SearchStopSignal(
 );
 #[cfg(not(target_arch = "wasm32"))]
 impl SearchStopSignal {
-    #[doc(hidden)]
-    pub fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
-    #[doc(hidden)]
-    pub fn from_atomic_bool(abool: Arc<AtomicBool>) -> Self {
-        Self(abool)
-    }
     /// Requests the search to stop.
     pub fn stop_search(&self) {
         self.0.store(true, Ordering::Relaxed);
