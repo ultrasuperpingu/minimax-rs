@@ -435,6 +435,14 @@ impl<E: Evaluator> ParallelSearch<E> {
     pub fn parallel_options(&self) -> &ParallelOptions {
         &self.par_opts
     }
+    /// Return the search options used in this search.
+    pub fn get_max_depth(&self) -> u8 {
+        self.max_depth
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_time(&self) -> &Duration {
+        &self.max_time
+    }
     /// Returns a handle to the signal used to stop the search.
     pub fn stop_signal(&self) -> SearchStopSignal {
         SearchStopSignal(self.stop_signal.clone())

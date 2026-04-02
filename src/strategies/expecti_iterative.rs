@@ -7,6 +7,7 @@
 use crate::IterativeOptions;
 use crate::strategies::iterative::SearchStopSignal;
 use crate::strategies::iterative::Stats;
+use crate::strategies::iterative::TranspositionTable;
 
 use super::super::interface::*;
 use super::super::util::*;

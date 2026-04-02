@@ -36,6 +36,9 @@ pub struct SearchStopSignal(
 );
 #[cfg(not(target_arch = "wasm32"))]
 impl SearchStopSignal {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
     /// Requests the search to stop.
     pub fn stop_search(&self) {
         self.0.store(true, Ordering::Relaxed);
@@ -43,7 +46,7 @@ impl SearchStopSignal {
 }
 
 
-struct TranspositionTable<M> {
+pub(crate) struct TranspositionTable<M> {
     table: Vec<Entry<M>>,
     mask: usize,
     // Incremented for each iterative deepening run.
@@ -53,7 +56,7 @@ struct TranspositionTable<M> {
 }
 
 impl<M: Copy> TranspositionTable<M> {
-    fn new(table_byte_size: usize, strategy: Replacement) -> Self {
+    pub(crate) fn new(table_byte_size: usize, strategy: Replacement) -> Self {
         let size = (table_byte_size / std::mem::size_of::<Entry<M>>()).next_power_of_two();
         let mask = if strategy == Replacement::TwoTier { (size - 1) & !1 } else { size - 1 };
         let mut table = Vec::with_capacity(size);
@@ -160,6 +163,42 @@ impl IterativeOptions {
             countermove_history_table: false,
             verbose: false,
         }
+    }
+    pub fn get_strategy(&self) -> Replacement {
+        self.strategy
+    }
+    pub fn get_null_window_search(&self) -> bool {
+        self.null_window_search
+    }
+    pub fn get_null_move_depth(&self) -> Option<u8> {
+        self.null_move_depth
+    }
+    pub fn get_singular_extension(&self) -> bool {
+        self.singular_extension
+    }
+    pub fn get_aspiration_window(&self) -> Option<Evaluation> {
+        self.aspiration_window
+    }
+    pub fn get_mtdf(&self) -> bool {
+        self.mtdf
+    }
+    pub fn get_step_increment(&self) -> Option<u8> {
+        self.null_move_depth
+    }
+    pub fn get_max_quiescence_depth(&self) -> u8 {
+        self.max_quiescence_depth
+    }
+    pub fn get_min_reorder_moves_depth(&self) -> u8 {
+        self.min_reorder_moves_depth
+    }
+    pub fn get_countermove_table(&self) -> bool {
+        self.countermove_table
+    }
+    pub fn get_countermove_history_table(&self) -> bool {
+        self.countermove_history_table
+    }
+    pub fn get_verbose(&self) -> bool {
+        self.verbose
     }
 }
 

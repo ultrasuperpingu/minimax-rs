@@ -195,3 +195,127 @@ where
     }
     counts
 }
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+/// Perft avec cache thread-safe basé sur Mutex<HashMap>
+pub fn perft_tt<G: Game>(
+    state: &mut G::S,
+    max_depth: u8,
+    multi_threaded: bool,
+) -> Vec<u64>
+where
+    G::S: Clone + Send + Sync,
+    G::M: Copy + Send + Sync,
+{
+    println!("depth           count        time        kn/s");
+    let mut counts = Vec::new();
+    let single_thread_cutoff = if multi_threaded { 3 } else { max_depth };
+
+    // Cache thread-safe
+    let cache: Arc<Mutex<HashMap<(u64, u8), u64>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    for depth in 0..=max_depth {
+        let start = Instant::now();
+        let mut pool = MovePool::<G::M>::default();
+
+        let count = perft_cached_recurse::<G>(
+            state,
+            depth,
+            single_thread_cutoff,
+            &mut pool,
+            Some(cache.clone()),
+            multi_threaded,
+        );
+
+        let dur = start.elapsed();
+        let rate = count as f64 / dur.as_secs_f64() / 1000.0;
+        let time = format!("{:.1?}", dur);
+        println!("{:>5} {:>15} {:>11} {:>11.1}", depth, count, time, rate);
+
+        counts.push(count);
+    }
+
+    counts
+}
+
+fn perft_cached_recurse<G: Game>(
+    state: &mut G::S,
+    depth: u8,
+    single_thread_cutoff: u8,
+    pool: &mut MovePool<G::M>,
+    cache: Option<Arc<Mutex<HashMap<(u64, u8), u64>>>>,
+    multi_threaded: bool,
+) -> u64
+where
+    G::S: Clone + Send + Sync,
+    G::M: Copy + Send + Sync,
+{
+    if depth == 0 {
+        return 1;
+    }
+    if G::get_winner(state).is_some() {
+        return 0;
+    }
+
+    let hash = G::zobrist_hash(state);
+    let key = (hash, depth);
+
+    // Lookup dans le cache avec hash + depth
+    if let Some(cache) = &cache {
+        if let Some(&val) = cache.lock().unwrap().get(&key) {
+            return val;
+        }
+    }
+
+    let mut moves = pool.alloc();
+    G::generate_moves(state, &mut moves);
+
+    let n = if depth == 1 {
+        moves.len() as u64
+    } else if !multi_threaded || depth <= single_thread_cutoff {
+        // Single-thread recurse
+        let mut count = 0;
+        for &m in moves.iter() {
+            let mut new = AppliedMove::<G>::new(state, m);
+            count += perft_cached_recurse::<G>(
+                &mut new,
+                depth - 1,
+                single_thread_cutoff,
+                pool,
+                cache.clone(),
+                multi_threaded,
+            );
+        }
+        count
+    } else {
+        // Multi-thread recurse
+        moves
+            .iter()
+            .map(|&m| {
+                let mut state = state.clone();
+                let mut pool2 = MovePool::<G::M>::default();
+                if let Some(new_state) = G::apply(&mut state, m) {
+                    state = new_state;
+                }
+                perft_cached_recurse::<G>(
+                    &mut state,
+                    depth - 1,
+                    single_thread_cutoff,
+                    &mut pool2,
+                    cache.clone(),
+                    multi_threaded,
+                )
+            })
+            .sum()
+    };
+
+    // Store in cache
+    if let Some(cache) = &cache {
+        cache.lock().unwrap().insert(key, n);
+    }
+
+    pool.free(moves);
+    n
+}
