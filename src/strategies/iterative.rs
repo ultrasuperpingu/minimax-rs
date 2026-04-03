@@ -31,11 +31,20 @@ pub enum Replacement {
 
 /// A shared signal used to request the termination of an ongoing search.
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
 pub struct SearchStopSignal(
     pub(super) Arc<AtomicBool>
 );
 #[cfg(not(target_arch = "wasm32"))]
 impl SearchStopSignal {
+    #[doc(hidden)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    #[doc(hidden)]
+    pub fn from_atomic_bool(abool: Arc<AtomicBool>) -> Self {
+        Self(abool)
+    }
     /// Requests the search to stop.
     pub fn stop_search(&self) {
         self.0.store(true, Ordering::Relaxed);

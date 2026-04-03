@@ -16,8 +16,9 @@ pub(super) fn timeout_signal(dur: Duration, signal: &Arc<AtomicBool>) -> Arc<()>
     let signal2 = signal.clone();
     signal2.store(false, Ordering::Relaxed);
     spawn(move || {
+        //TODO: Find a way to stop the thread when search is done or cancelled before timeout
         sleep(dur);
-        if let Some(_) = weak.upgrade() {
+        if weak.upgrade().is_some() {
             signal2.store(true, Ordering::Relaxed);
         }
     });
