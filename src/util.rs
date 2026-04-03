@@ -240,12 +240,13 @@ where
     counts
 }
 
+type PertCache = Option<Arc<Mutex<HashMap<(u64, u8), u64>>>>;
 fn perft_cached_recurse<G: Game>(
     state: &mut G::S,
     depth: u8,
     single_thread_cutoff: u8,
     pool: &mut MovePool<G::M>,
-    cache: Option<Arc<Mutex<HashMap<(u64, u8), u64>>>>,
+    cache: PertCache,
     multi_threaded: bool,
 ) -> u64
 where
