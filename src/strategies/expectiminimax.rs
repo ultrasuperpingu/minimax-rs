@@ -86,27 +86,19 @@ where
     ) -> Evaluation
     {
         if depth == 0 {
-            if let Some(winner) = E::G::get_winner(s) {
-                // This could be inacurate. Does the player changed after applying the winning move??
-                return if E::G::current_player(s) == to_choose_player {
-                    match winner {
-                        crate::Winner::PlayerJustMoved => BEST_EVAL,
-                        crate::Winner::Draw => 0,
-                        crate::Winner::PlayerToMove => WORST_EVAL,
-                    }
-                } else {
-                    match winner {
-                        crate::Winner::PlayerJustMoved => WORST_EVAL,
-                        crate::Winner::Draw => 0,
-                        crate::Winner::PlayerToMove => BEST_EVAL,
-                    }
+            if let Some(winner) = E::G::get_explicit_winner(s) {
+                return match winner {
+                    crate::TurnBasedWinner::Player(p) if p == to_choose_player => BEST_EVAL,
+                    crate::TurnBasedWinner::Player(_) => WORST_EVAL,
+                    crate::TurnBasedWinner::Draw => 0,
                 };
             }
             return self.eval.evaluate(s);
         }
         let mut moves = self.move_pool.alloc();
-        if let Some(winner) = E::G::generate_moves(s, &mut moves) {
-            return if E::G::current_player(s) == to_choose_player {
+        if let Some(_winner) = E::G::generate_moves(s, &mut moves) {
+            //TODO: this is not ok...
+            /*return if E::G::current_player(s) == to_choose_player {
                     match winner {
                         crate::Winner::PlayerJustMoved => BEST_EVAL,
                         crate::Winner::Draw => 0,
@@ -118,7 +110,7 @@ where
                         crate::Winner::Draw => 0,
                         crate::Winner::PlayerToMove => BEST_EVAL,
                     }
-                };
+                };*/
         }
 
         if moves.is_empty() {
@@ -246,6 +238,9 @@ mod tests {
     impl crate::TurnBasedGame for DumbGame {
         fn current_player(state: &Self::S) -> i8 {
             if state.to_move {-1} else {1}
+        }
+        fn get_explicit_winner(_state: &Self::S) -> Option<crate::TurnBasedWinner> {
+            None
         }
     }
     impl crate::StochasticGame for DumbGame {

@@ -216,6 +216,15 @@ impl TurnBasedGame for Game {
     fn current_player(state: &Self::S) -> i8 {
         if state.to_move { -1 } else { 1 }
     }
+    fn get_explicit_winner(b: &Board) -> Option<minimax::TurnBasedWinner> {
+        if b.p1 == RACE_LENGTH {
+            Some(minimax::TurnBasedWinner::Player(1))
+        } else if b.p2 == RACE_LENGTH {
+            Some(minimax::TurnBasedWinner::Player(-1))
+        } else {
+            None
+        }
+    }
 }
 impl minimax::StochasticGame for Game {
     fn is_random_move(state: &Self::S) -> bool {

@@ -76,6 +76,14 @@ impl Winner {
         }
     }
 }
+/// The result of playing a game until it finishes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TurnBasedWinner {
+    /// The player who won.
+    Player(i8),
+    /// Nobody won.
+    Draw,
+}
 
 /// Defines the rules for a two-player, perfect-knowledge game.
 ///
@@ -165,6 +173,10 @@ pub trait Game: Sized {
 pub trait TurnBasedGame : Game {
     /// Returns the current player (e.g. 1 or -1) for the given state.
     fn current_player(state: &Self::S) -> i8;
+    /// Returns `Some(Player(i8))` if there's a winner,
+    /// `Some(Draw)` if the state is terminal without a winner, and `None` if
+    /// the state is non-terminal.
+    fn get_explicit_winner(state: &Self::S) -> Option<TurnBasedWinner>;
 }
 /// Extends Game to support stochastic (random) moves.
 pub trait StochasticGame : Game {
