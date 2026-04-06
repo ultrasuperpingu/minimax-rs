@@ -263,7 +263,7 @@ impl Default for DiceRaceEvaluator {
     }
 }
 impl TurnBasedGameEvaluator for DiceRaceEvaluator {
-    fn set_player_on_trait(&mut self, p: i8) {
+    fn set_evaluated_player(&mut self, p: i8) {
         self.0 = p != 1;
     }
 }

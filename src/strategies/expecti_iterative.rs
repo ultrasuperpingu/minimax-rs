@@ -483,7 +483,7 @@ where
         let mut best_move = None;
         let mut interval_start;
         let player_to_move = E::G::current_player(s);
-        self.minimaxer.eval.set_player_on_trait(player_to_move);
+        self.minimaxer.eval.set_evaluated_player(player_to_move);
         // Store the moves so they can be reordered every iteration.
         let mut moves = Vec::new();
         if E::G::generate_moves(&s_clone, &mut moves).is_some() {

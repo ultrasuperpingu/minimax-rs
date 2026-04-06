@@ -30,7 +30,7 @@ where
         let mut best = WORST_EVAL;
         let mut moves = self.move_pool.alloc();
         let player = E::G::current_player(s);
-        self.eval.set_player_on_trait(player);
+        self.eval.set_evaluated_player(player);
         if E::G::generate_moves(s, &mut moves).is_some() {
             return None;
         }
@@ -266,7 +266,7 @@ mod tests {
         }
     }
     impl TurnBasedGameEvaluator for Eval {
-        fn set_player_on_trait(&mut self, p: i8) {
+        fn set_evaluated_player(&mut self, p: i8) {
             self.0 = p != 1;
         }
     }

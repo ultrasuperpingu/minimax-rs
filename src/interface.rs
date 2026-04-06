@@ -50,7 +50,7 @@ pub trait TurnBasedGameEvaluator : Evaluator
 where Self::G: TurnBasedGame
 {
     /// Set the current player for evaluation purposes.
-    fn set_player_on_trait(&mut self, p: i8);
+    fn set_evaluated_player(&mut self, p: i8);
 }
 /// The result of playing a game until it finishes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
