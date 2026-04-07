@@ -146,6 +146,7 @@ pub(super) trait ConcurrentTable<M> {
     fn concurrent_advance_generation(&self);
 
     // Update table based on negamax results.
+    #[cfg(not(target_arch = "wasm32"))]
     fn concurrent_update(
         &self, hash: u64, alpha_orig: Evaluation, beta: Evaluation, depth: u8, best: Evaluation,
         best_move: M,

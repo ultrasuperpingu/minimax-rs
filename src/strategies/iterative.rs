@@ -16,7 +16,7 @@ use rand::prelude::SliceRandom;
 use std::cmp::max;
 //#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
+//#[cfg(not(target_arch = "wasm32"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -30,12 +30,12 @@ pub enum Replacement {
 }
 
 /// A shared signal used to request the termination of an ongoing search.
-#[cfg(not(target_arch = "wasm32"))]
+//#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 pub struct SearchStopSignal(
     pub(super) Arc<AtomicBool>
 );
-#[cfg(not(target_arch = "wasm32"))]
+//#[cfg(not(target_arch = "wasm32"))]
 impl SearchStopSignal {
     #[doc(hidden)]
     pub fn new() -> Self {
@@ -664,6 +664,14 @@ where
     /// Return the options used in this search.
     pub fn options(&self) -> &IterativeOptions {
         &self.opts
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_depth(&self) -> u8 {
+        self.max_depth
+    }
+    /// Return the search options used in this search.
+    pub fn get_max_time(&self) -> &Duration {
+        &self.max_time
     }
     /// Returns a handle to the signal used to stop the search.
     #[cfg(not(target_arch = "wasm32"))]

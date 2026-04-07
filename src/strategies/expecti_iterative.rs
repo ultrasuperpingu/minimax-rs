@@ -5,6 +5,8 @@
 //! a transposition table to reuse information from previous iterations.
 
 use crate::IterativeOptions;
+
+//#[cfg(not(target_arch = "wasm32"))]
 use crate::strategies::iterative::SearchStopSignal;
 use crate::strategies::iterative::Stats;
 use crate::strategies::iterative::TranspositionTable;
@@ -19,9 +21,9 @@ use super::table::*;
 use instant::Instant;
 use rand::prelude::SliceRandom;
 use std::cmp::max;
-//#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
-//#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -29,7 +31,7 @@ pub(super) struct ExpectiMinimaxer<E: TurnBasedGameEvaluator, T>
 where
     E::G: TurnBasedGame+StochasticGame,
 {
-    //#[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(target_arch = "wasm32"))]
     timeout: Arc<AtomicBool>,
     #[cfg(target_arch = "wasm32")]
     deadline: Instant,
@@ -51,7 +53,7 @@ where
 {
     pub(super) fn new(table: T, eval: E, opts: IterativeOptions) -> Self {
         Self {
-            //#[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(target_arch = "wasm32"))]
             timeout: Arc::new(AtomicBool::new(false)),
             #[cfg(target_arch = "wasm32")]
             deadline: Instant::now(),
@@ -69,7 +71,10 @@ where
     /// This should be obtained before starting a search.
     //#[cfg(not(target_arch = "wasm32"))]
     pub(super) fn next_search_stop_signal(&self) -> SearchStopSignal {
-        SearchStopSignal(self.timeout.clone())
+        #[cfg(not(target_arch = "wasm32"))]
+        {SearchStopSignal(self.timeout.clone())}
+        #[cfg(target_arch = "wasm32")]
+        {SearchStopSignal::new()}
     }
 
     //#[cfg(not(target_arch = "wasm32"))]
@@ -142,7 +147,7 @@ where
         if self.timeout_check() {
             return None;
         }
-        if let Some(winner) = E::G::get_winner(s) {
+        /*if let Some(winner) = E::G::get_winner(s) {
             return if E::G::current_player(s) == player_to_move {
                     match winner {
                         crate::Winner::PlayerJustMoved => Some(BEST_EVAL),
@@ -156,7 +161,14 @@ where
                         crate::Winner::PlayerToMove => Some(BEST_EVAL),
                     }
                 };
-        }
+        }*/
+        if let Some(winner) = E::G::get_explicit_winner(s) {
+                return match winner {
+                    crate::TurnBasedWinner::Player(p) if p == player_to_move => Some(BEST_EVAL),
+                    crate::TurnBasedWinner::Player(_) => Some(WORST_EVAL),
+                    crate::TurnBasedWinner::Draw => Some(0),
+                };
+            }
         if depth == 0 {
             return Some(self.eval.evaluate(s));
         }
@@ -210,8 +222,9 @@ where
         }
 
         let mut moves = self.move_pool.alloc();
-        if let Some(winner) = E::G::generate_moves(s, &mut moves) {
-            return if E::G::current_player(s) == player_to_move {
+        if let Some(_winner) = E::G::generate_moves(s, &mut moves) {
+            //TODO: this is not ok...
+            /*return if E::G::current_player(s) == player_to_move {
                     match winner {
                         crate::Winner::PlayerJustMoved => Some(BEST_EVAL),
                         crate::Winner::Draw => Some(0),
@@ -223,7 +236,7 @@ where
                         crate::Winner::Draw => Some(0),
                         crate::Winner::PlayerToMove => Some(BEST_EVAL),
                     }
-                };
+                };*/
         }
         self.stats.generate_moves(moves.len());
         if moves.is_empty() {
