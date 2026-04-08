@@ -70,7 +70,7 @@ where
     /// Returns a handle to the signal used to stop the search.
     /// This should be obtained before starting a search.
     //#[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn next_search_stop_signal(&self) -> SearchStopSignal {
+    pub(super) fn stop_signal(&self) -> SearchStopSignal {
         #[cfg(not(target_arch = "wasm32"))]
         {SearchStopSignal(self.timeout.clone())}
         #[cfg(target_arch = "wasm32")]
@@ -123,8 +123,8 @@ where
         {
             // Default to a minimum of depth=1 after null moving.
             if depth > depth_reduction &&
-            // If the position already seems pretty awesome.
-            self.eval.evaluate(s) >= beta
+                // If the position already seems pretty awesome.
+                self.eval.evaluate(s) >= beta
             {
                 // If we just pass and let the opponent play this position (at reduced depth),
                 let mut nulled = AppliedMove::<E::G>::new(s, null_move);
@@ -142,7 +142,7 @@ where
 
     // Negamax only among noisy moves.
     fn noisy_negamax(
-        &mut self, s: &mut <E::G as Game>::S, depth: u8, player_to_move: i8, mut alpha: Evaluation, beta: Evaluation,
+        &mut self, s: &mut <E::G as Game>::S, depth: u8, player_to_move: i8, mut alpha: Evaluation, mut beta: Evaluation,
     ) -> Option<Evaluation> {
         if self.timeout_check() {
             return None;
@@ -179,17 +179,60 @@ where
             self.move_pool.free(moves);
             return Some(self.eval.evaluate(s));
         }
-        //TODO
-        let mut best = WORST_EVAL;
-        for m in moves.iter() {
-            let mut new = AppliedMove::<E::G>::new(s, *m);
-            let value = self.noisy_negamax(&mut new, depth - 1, player_to_move, alpha, beta)?;
-            best = max(best, value);
-            alpha = max(alpha, value);
-            if alpha >= beta {
-                break;
+        //TODO: check it's working
+        let mut best;
+        if E::G::is_random_move(s) {
+            let mut value = 0.0;
+
+            for m in moves.iter() {
+                let p = <E::G as StochasticGame>::get_probability(s, *m);
+                let mut new = AppliedMove::<E::G>::new(s, *m);
+                let score = self.noisy_negamax(&mut new, depth - 1, player_to_move, alpha, beta)?;
+                value += p * score as f32;
+            }
+            
+            best = value.round() as Evaluation;
+        } else if E::G::current_player(s) == player_to_move {
+            best = WORST_EVAL;
+            for &m in moves.iter() {
+                let mut new = AppliedMove::<E::G>::new(s, m);
+                let value = self.noisy_negamax(&mut new, depth - 1, player_to_move, alpha, beta)?;
+                if value > best {
+                    best = value;
+                }
+                if value >= alpha {
+                    alpha = value;
+                }
+                if best >= beta {
+                    break;
+                }
+            }
+        } else {
+            best = BEST_EVAL;
+            for &m in moves.iter() {
+                let mut new = AppliedMove::<E::G>::new(s, m);
+                let value = self.noisy_negamax(&mut new, depth - 1, player_to_move, alpha, beta)?;
+                if value < best {
+                    best = value;
+                }
+                if best < beta {
+                    beta = value;
+                }
+                if best <= alpha {
+                    break;
+                }
             }
         }
+        //let mut best = WORST_EVAL;
+        //for m in moves.iter() {
+        //    let mut new = AppliedMove::<E::G>::new(s, *m);
+        //    let value = self.noisy_negamax(&mut new, depth - 1, player_to_move, alpha, beta)?;
+        //    best = max(best, value);
+        //    alpha = max(alpha, value);
+        //    if alpha >= beta {
+        //        break;
+        //    }
+        //}
         self.move_pool.free(moves);
         Some(best)
     }
@@ -463,8 +506,8 @@ where
     /// Returns a handle to the signal used to stop the search.
     /// This should be obtained before starting a search.
     //#[cfg(not(target_arch = "wasm32"))]
-    pub fn next_search_stop_signal(&self) -> SearchStopSignal {
-        self.minimaxer.next_search_stop_signal()
+    pub fn stop_signal(&self) -> SearchStopSignal {
+        self.minimaxer.stop_signal()
     }
 
     #[doc(hidden)]
