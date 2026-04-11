@@ -9,6 +9,8 @@ pub mod random;
 pub mod ybw;
 pub mod expectiminimax;
 pub mod expecti_iterative;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod expecti_ybw;
 
 mod common;
 #[cfg(not(target_arch = "wasm32"))]

@@ -345,13 +345,13 @@ where
                     best = value;
                     best_move = m;
                 }
-                if value >= alpha {
+                if value > alpha {
                     alpha = value;
                     // Now that we've found a good move, assume following moves
                     // are worse, and seek to cull them without full evaluation.
                     null_window = self.opts.null_window_search;
                 }
-                if best >= beta {
+                if alpha >= beta {
                     self.countermoves.update(prev_move, m);
                     break;
                 }
