@@ -8,6 +8,7 @@
 extern crate rayon;
 
 use crate::strategies::iterative::SearchStopSignal;
+use crate::ParallelOptions;
 
 use super::super::interface::*;
 use super::super::util::*;
@@ -21,50 +22,6 @@ use std::cmp::max;
 use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-/// Options to use for the parallel search engine.
-#[derive(Clone, Copy)]
-pub struct ParallelOptions {
-    pub num_threads: Option<usize>,
-    serial_cutoff_depth: u8,
-    pub background_pondering: bool,
-}
-
-impl ParallelOptions {
-    pub fn new() -> Self {
-        ParallelOptions { num_threads: None, serial_cutoff_depth: 1, background_pondering: false }
-    }
-}
-
-impl Default for ParallelOptions {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ParallelOptions {
-    /// Set the total number of threads to use. Otherwise defaults to num_cpus.
-    pub fn with_num_threads(mut self, num_threads: usize) -> Self {
-        self.num_threads = Some(num_threads);
-        self
-    }
-
-    /// At what depth should we stop trying to parallelize and just run serially.
-    pub fn with_serial_cutoff_depth(mut self, depth: u8) -> Self {
-        self.serial_cutoff_depth = depth;
-        self
-    }
-
-    /// Continuing processing during opponent's move.
-    pub fn with_background_pondering(mut self) -> Self {
-        self.background_pondering = true;
-        self
-    }
-
-    pub fn num_threads(self) -> usize {
-        self.num_threads.unwrap_or_else(num_cpus::get)
-    }
-}
 
 struct ParallelExpectiMinimax<E: TurnBasedGameEvaluator>
 where

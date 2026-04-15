@@ -28,5 +28,9 @@ bencher = "0.1.5"
 name = "negamax"
 harness = false
 
+[[bench]]
+name = "expectiminimax"
+harness = false
+
 [profile.test]
 opt-level = 3

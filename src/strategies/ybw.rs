@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Copy)]
 pub struct ParallelOptions {
     pub num_threads: Option<usize>,
-    serial_cutoff_depth: u8,
+    pub(crate) serial_cutoff_depth: u8,
     pub background_pondering: bool,
 }
 

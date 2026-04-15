@@ -254,7 +254,7 @@ impl minimax::StochasticGame for Game {
         }
     }
 }
-
+#[derive(Clone)]
 pub struct DiceRaceEvaluator(bool);
 
 impl Default for DiceRaceEvaluator {
