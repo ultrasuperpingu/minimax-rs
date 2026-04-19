@@ -14,7 +14,7 @@ use super::super::interface::*;
 use super::super::util::*;
 use super::common::*;
 use super::iterative::{IterativeOptions, Stats};
-use super::sync_util::{CachePadded, ThreadLocal, par_iter_in_order, timeout_signal};
+use super::sync_util::{par_iter_in_order, timeout_signal, CachePadded, ThreadLocal};
 use super::table::*;
 
 use rayon::prelude::*;
@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 struct ParallelExpectiMinimax<E: TurnBasedGameEvaluator>
 where
-    E::G : TurnBasedGame,
+    E::G: TurnBasedGame,
 {
     table: Arc<LockfreeTable<<E::G as Game>::M>>,
     eval: E,
@@ -40,7 +40,7 @@ where
 
 impl<E: TurnBasedGameEvaluator> ParallelExpectiMinimax<E>
 where
-    E::G : TurnBasedGame + StochasticGame,
+    E::G: TurnBasedGame + StochasticGame,
     <E::G as Game>::S: Clone + Send + Sync,
     <E::G as Game>::M: Copy + Eq + Send + Sync,
     E: Clone + Sync + Send + 'static,
@@ -83,8 +83,14 @@ where
             {
                 // If we just pass and let the opponent play this position (at reduced depth),
                 let mut nulled = AppliedMove::<E::G>::new(s, null_move);
-                let value =
-                    self.expectiminimax(&mut nulled, None, depth - depth_reduction, player_to_move, beta - 1, beta)?;
+                let value = self.expectiminimax(
+                    &mut nulled,
+                    None,
+                    depth - depth_reduction,
+                    player_to_move,
+                    beta - 1,
+                    beta,
+                )?;
                 // is the result still so good that we shouldn't bother with a full search?
                 if value >= beta {
                     return Some(value);
@@ -97,7 +103,8 @@ where
 
     // Negamax only among noisy moves.
     fn noisy_negamax(
-        &self, s: &mut <E::G as Game>::S, depth: u8, player_to_move: i8, mut alpha: Evaluation, beta: Evaluation,
+        &self, s: &mut <E::G as Game>::S, depth: u8, player_to_move: i8, mut alpha: Evaluation,
+        beta: Evaluation,
     ) -> Option<Evaluation> {
         if self.timeout.load(Ordering::Relaxed) {
             return None;
@@ -133,8 +140,8 @@ where
 
     // Recursively compute negamax on the game state. Returns None if it hits the timeout.
     fn expectiminimax(
-        &self, s: &mut <E::G as Game>::S, prev_move: Option<<E::G as Game>::M>, depth: u8, player_to_move: i8,
-        mut alpha: Evaluation, mut beta: Evaluation,
+        &self, s: &mut <E::G as Game>::S, prev_move: Option<<E::G as Game>::M>, depth: u8,
+        player_to_move: i8, mut alpha: Evaluation, mut beta: Evaluation,
     ) -> Option<Evaluation>
     where
         E::G: StochasticGame,
@@ -151,9 +158,17 @@ where
         if depth == 0 {
             // Evaluate quiescence search on leaf nodes.
             // Will just return the node's evaluation if quiescence search is disabled.
-            return self.noisy_negamax(s, self.opts.max_quiescence_depth, player_to_move, alpha, beta);
+            return self.noisy_negamax(
+                s,
+                self.opts.max_quiescence_depth,
+                player_to_move,
+                alpha,
+                beta,
+            );
         }
+        let current_player = E::G::current_player(s);
         let alpha_orig = alpha;
+        let beta_orig = beta;
         let hash = E::G::zobrist_hash(s);
         let mut good_move = None;
         if let Some(value) = self.table.check(hash, depth, &mut good_move, &mut alpha, &mut beta) {
@@ -195,7 +210,11 @@ where
             let mut new = AppliedMove::<E::G>::new(s, first_move);
             self.expectiminimax(&mut new, Some(first_move), depth - 1, player_to_move, alpha, beta)?
         };
-        alpha = max(alpha, initial_value);
+        if current_player == player_to_move {
+            alpha = alpha.max(initial_value);
+        } else {
+            beta = beta.min(initial_value);
+        }
         let (best, best_move) = if alpha >= beta {
             // Skip search
             (initial_value, first_move)
@@ -210,25 +229,53 @@ where
                 for m in moves.iter() {
                     let p = <E::G as StochasticGame>::get_probability(s, *m);
                     let mut new = AppliedMove::<E::G>::new(s, *m);
-                    let score = self.expectiminimax(&mut new, prev_move, depth - 1, player_to_move, alpha, beta)?;
+                    let score = self.expectiminimax(
+                        &mut new,
+                        prev_move,
+                        depth - 1,
+                        player_to_move,
+                        alpha,
+                        beta,
+                    )?;
                     value += p * score as f32;
                 }
-                
+
                 best = value.round() as Evaluation;
                 (best, best_move)
-            } else if E::G::current_player(s) == player_to_move {
+            } else if current_player == player_to_move {
                 for &m in moves[1..].iter() {
                     let mut new = AppliedMove::<E::G>::new(s, m);
                     let value = if null_window {
-                        let probe = self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, alpha, alpha+1)?;
+                        let probe = self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            alpha,
+                            alpha + 1,
+                        )?;
                         if probe > alpha && probe < beta {
                             // Full search fallback.
-                            self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, probe, beta)?
+                            self.expectiminimax(
+                                &mut new,
+                                Some(m),
+                                depth - 1,
+                                player_to_move,
+                                probe,
+                                beta,
+                            )?
                         } else {
                             probe
                         }
                     } else {
-                        self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, alpha, beta)?
+                        self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            alpha,
+                            beta,
+                        )?
                     };
                     if value > best {
                         best = value;
@@ -250,21 +297,42 @@ where
                 for &m in moves[1..].iter() {
                     let mut new = AppliedMove::<E::G>::new(s, m);
                     let value = if null_window {
-                        let probe = self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, alpha, alpha+1)?;
+                        let probe = self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            beta - 1,
+                            beta,
+                        )?;
                         if probe > alpha && probe < beta {
                             // Full search fallback.
-                            self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, probe, beta)?
+                            self.expectiminimax(
+                                &mut new,
+                                Some(m),
+                                depth - 1,
+                                player_to_move,
+                                alpha,
+                                beta,
+                            )?
                         } else {
                             probe
                         }
                     } else {
-                        self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, alpha, beta)?
+                        self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            alpha,
+                            beta,
+                        )?
                     };
                     if value < best {
                         best = value;
                         best_move = m;
                     }
-                    if best < beta {
+                    if value < beta {
                         beta = value;
                         // Now that we've found a good move, assume following moves
                         // are worse, and seek to cull them without full evaluation.
@@ -277,48 +345,111 @@ where
                 }
                 (best, best_move)
             }
-            
         } else {
             let alpha = AtomicI16::new(alpha);
+            let beta = AtomicI16::new(beta);
             let best_move = Mutex::new(ValueMove::new(initial_value, first_move));
             // Parallel search
             let result = par_iter_in_order(&moves[1..]).try_for_each(|&m| -> Option<()> {
-                // Check to see if we're cancelled by another branch.
                 let initial_alpha = alpha.load(Ordering::SeqCst);
-                if initial_alpha >= beta {
+                let initial_beta = beta.load(Ordering::SeqCst);
+                // Check to see if we're cancelled by another branch.
+                if initial_alpha >= initial_beta {
                     return None;
                 }
-
-                let mut state = s.clone();
-                let mut new = AppliedMove::<E::G>::new(&mut state, m);
-                let value = if self.opts.null_window_search && initial_alpha > alpha_orig {
-                    // TODO: send reference to alpha as neg_beta to children.
-                    let probe = self.expectiminimax(
-                        &mut new,
-                        Some(m),
-                        depth - 1,
-                        player_to_move,
-                        initial_alpha,
-                        initial_alpha+1,
-                    )?;
-                    if probe > initial_alpha && probe < beta {
-                        // Check again that we're not cancelled.
-                        if alpha.load(Ordering::SeqCst) >= beta {
-                            return None;
+                if current_player == player_to_move {
+                    // MAX node
+                    let mut state = s.clone();
+                    let mut new = AppliedMove::<E::G>::new(&mut state, m);
+                    let value = if self.opts.null_window_search && initial_alpha > alpha_orig {
+                        // TODO: send reference to alpha as neg_beta to children.
+                        let probe = self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            initial_alpha,
+                            initial_alpha + 1,
+                        )?;
+                        if probe > initial_alpha && probe < initial_beta {
+                            // Check again that we're not cancelled.
+                            if alpha.load(Ordering::SeqCst) >= beta.load(Ordering::SeqCst) {
+                                return None;
+                            }
+                            // Full search fallback.
+                            self.expectiminimax(
+                                &mut new,
+                                Some(m),
+                                depth - 1,
+                                player_to_move,
+                                probe,
+                                beta,
+                            )?
+                        } else {
+                            probe
                         }
-                        // Full search fallback.
-                        self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, probe, beta)?
                     } else {
-                        probe
-                    }
-                } else {
-                    self.expectiminimax(&mut new, Some(m), depth - 1, player_to_move, initial_alpha, beta)?
-                };
+                        self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            initial_alpha,
+                            initial_beta,
+                        )?
+                    };
 
-                alpha.fetch_max(value, Ordering::SeqCst);
-                let mut bests = best_move.lock().unwrap();
-                bests.max(value, m);
-                Some(())
+                    alpha.fetch_max(value, Ordering::SeqCst);
+                    let mut bests = best_move.lock().unwrap();
+                    bests.max(value, m);
+                    Some(())
+                } else {
+                    // MIN node
+                    let mut state = s.clone();
+                    let mut new = AppliedMove::<E::G>::new(&mut state, m);
+                    let value = if self.opts.null_window_search && initial_beta < beta_orig {
+                        // TODO: send reference to alpha as neg_beta to children.
+                        let probe = self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            initial_beta - 1,
+                            initial_beta,
+                        )?;
+                        if probe > initial_alpha && probe < initial_beta {
+                            // Check again that we're not cancelled.
+                            if alpha.load(Ordering::SeqCst) >= beta.load(Ordering::SeqCst) {
+                                return None;
+                            }
+                            // Full search fallback.
+                            self.expectiminimax(
+                                &mut new,
+                                Some(m),
+                                depth - 1,
+                                player_to_move,
+                                initial_alpha,
+                                initial_beta,
+                            )?
+                        } else {
+                            probe
+                        }
+                    } else {
+                        self.expectiminimax(
+                            &mut new,
+                            Some(m),
+                            depth - 1,
+                            player_to_move,
+                            initial_alpha,
+                            initial_beta,
+                        )?
+                    };
+
+                    beta.fetch_min(value, Ordering::SeqCst);
+                    let mut bests = best_move.lock().unwrap();
+                    bests.min(value, m);
+                    Some(())
+                }
             });
             if result.is_none() {
                 // Check for timeout.
@@ -349,7 +480,10 @@ where
         }
         while depth <= max_depth {
             interval_start = Instant::now();
-            if self.expectiminimax(&mut state, None, depth, player_to_move, WORST_EVAL, BEST_EVAL).is_none() {
+            if self
+                .expectiminimax(&mut state, None, depth, player_to_move, WORST_EVAL, BEST_EVAL)
+                .is_none()
+            {
                 // Timeout. Return the best move from the previous depth.
                 break;
             }
@@ -401,7 +535,7 @@ where
 
 pub struct ParallelSearch<E: TurnBasedGameEvaluator>
 where
-    E::G : TurnBasedGame,
+    E::G: TurnBasedGame,
 {
     max_depth: u8,
     max_time: Duration,
@@ -420,7 +554,7 @@ where
 }
 impl<E: TurnBasedGameEvaluator> ParallelSearch<E>
 where
-    E::G : TurnBasedGame,
+    E::G: TurnBasedGame,
 {
     pub fn new(eval: E, opts: IterativeOptions, par_opts: ParallelOptions) -> ParallelSearch<E> {
         let table = Arc::new(LockfreeTable::new(opts.table_byte_size));
@@ -486,7 +620,7 @@ where
 
 impl<E: TurnBasedGameEvaluator> Strategy<E::G> for ParallelSearch<E>
 where
-    E::G : TurnBasedGame + StochasticGame,
+    E::G: TurnBasedGame + StochasticGame,
     <E::G as Game>::S: Clone + Send + Sync,
     <E::G as Game>::M: Copy + Eq + Send + Sync,
     E: Clone + Sync + Send + 'static,
@@ -520,9 +654,9 @@ where
                 &self.thread_pool,
             );
             // Launch in threadpool and wait for result.
-            let value_move_depth = self
-                .thread_pool
-                .install(|| minimaxer.iterative_search(s.clone(), self.max_depth, player_to_move, false));
+            let value_move_depth = self.thread_pool.install(|| {
+                minimaxer.iterative_search(s.clone(), self.max_depth, player_to_move, false)
+            });
             self.principal_variation = minimaxer.principal_variation();
             let mut stats = Stats::default();
             minimaxer.stats.do_all_mut(|local| stats.add(local));
@@ -594,7 +728,7 @@ where
 
 impl<E: TurnBasedGameEvaluator> Drop for ParallelSearch<E>
 where
-    E::G : TurnBasedGame,
+    E::G: TurnBasedGame,
 {
     fn drop(&mut self) {
         self.background_cancel.store(true, Ordering::Relaxed);
